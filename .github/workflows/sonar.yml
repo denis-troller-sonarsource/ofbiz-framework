@@ -1,5 +1,7 @@
 name: SonarQube
 on:
+  schedule:
+    - cron: 0 0 * * 0
   push:
     branches:
       - trunk
@@ -35,7 +37,7 @@ jobs:
         run: ./gradle/init-gradle-wrapper.sh
 
       - name: Load all plugins
-        run: ./pullAllPluginsSource.sh
+        run: ./pullPluginSource.sh
 
       - name: Build and analyze
         env:
