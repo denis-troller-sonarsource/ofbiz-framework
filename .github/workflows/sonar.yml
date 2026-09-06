@@ -30,6 +30,13 @@ jobs:
           path: ~/.gradle/caches
           key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle') }}
           restore-keys: ${{ runner.os }}-gradle
+          
+      - name: Initialize Gradle wrapper
+        run: ./gradle/init-gradle-wrapper.sh
+
+      - name: Load all plugins
+        run: ./pullAllPluginsSource.sh
+
       - name: Build and analyze
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
