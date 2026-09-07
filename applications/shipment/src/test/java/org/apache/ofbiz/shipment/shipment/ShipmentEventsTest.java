@@ -28,6 +28,7 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 import java.util.Map;
 
+import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
@@ -88,6 +89,28 @@ class ShipmentEventsTest {
         String result = ShipmentEvents.viewShipmentPackageRouteSegLabelImage(request, response);
 
         assertEquals("error", result);
+    }
+
+    @Test
+    void viewShipmentPackageRouteSegLabelImageStreamsLabelImageOnSuccess() throws Exception {
+        GenericValue shipmentPackageRouteSeg = mock(GenericValue.class);
+        when(shipmentPackageRouteSeg.getBytes("labelImage")).thenReturn(new byte[] {1, 2, 3});
+
+        Delegator delegator = mockDelegator();
+        when(delegator.findList(anyString(), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(shipmentPackageRouteSeg));
+
+        HttpServletRequest request = mockRequest(delegator);
+        when(request.getParameter("shipmentId")).thenReturn("SHIP1");
+        when(request.getParameter("shipmentRouteSegmentId")).thenReturn("1");
+        when(request.getParameter("shipmentPackageSeqId")).thenReturn("00001");
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        ServletOutputStream outputStream = mock(ServletOutputStream.class);
+        when(response.getOutputStream()).thenReturn(outputStream);
+
+        String result = ShipmentEvents.viewShipmentPackageRouteSegLabelImage(request, response);
+
+        assertEquals("success", result);
     }
 
     @Test

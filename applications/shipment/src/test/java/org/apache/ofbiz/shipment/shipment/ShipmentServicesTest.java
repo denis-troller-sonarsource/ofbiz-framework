@@ -39,15 +39,19 @@ import java.util.Map;
 import org.apache.ofbiz.entity.Delegator;
 import org.apache.ofbiz.entity.GenericEntityException;
 import org.apache.ofbiz.entity.GenericValue;
+import org.apache.ofbiz.entity.DelegatorFactory;
 import org.apache.ofbiz.entity.condition.EntityCondition;
 import org.apache.ofbiz.entity.model.ModelEntity;
 import org.apache.ofbiz.entity.util.EntityFindOptions;
 import org.apache.ofbiz.entity.util.EntityListIterator;
+import org.apache.ofbiz.party.party.PartyWorker;
 import org.apache.ofbiz.service.DispatchContext;
 import org.apache.ofbiz.service.GenericServiceException;
 import org.apache.ofbiz.service.LocalDispatcher;
 import org.apache.ofbiz.service.ServiceUtil;
 import org.junit.jupiter.api.Test;
+import org.mockito.MockedStatic;
+import org.mockito.Mockito;
 
 class ShipmentServicesTest {
 
@@ -791,6 +795,78 @@ class ShipmentServicesTest {
     }
 
     @Test
+    void calcShipmentCostEstimatePicksHighestPriorityEstimateAndAppliesFeatureAndSizeSurcharges() throws Exception {
+        Delegator delegator = mockDelegator();
+
+        GenericValue lowPriorityEstimate = mock(GenericValue.class);
+        Map<String, Object> lowPriorityAsMap = lowPriorityEstimate;
+        when(lowPriorityEstimate.getString("geoIdTo")).thenReturn(null);
+        when(lowPriorityAsMap.get("partyId")).thenReturn(null);
+        when(lowPriorityAsMap.get("roleTypeId")).thenReturn(null);
+        when(lowPriorityAsMap.get("weightBreakId")).thenReturn(null);
+        when(lowPriorityAsMap.get("quantityBreakId")).thenReturn(null);
+        when(lowPriorityAsMap.get("priceBreakId")).thenReturn(null);
+        when(lowPriorityEstimate.getRelatedOne("WeightQuantityBreak", true)).thenReturn(null);
+        when(lowPriorityEstimate.getRelatedOne("QuantityQuantityBreak", true)).thenReturn(null);
+        when(lowPriorityEstimate.getRelatedOne("PriceQuantityBreak", true)).thenReturn(null);
+
+        GenericValue highPriorityEstimate = mock(GenericValue.class);
+        Map<String, Object> highPriorityAsMap = highPriorityEstimate;
+        when(highPriorityEstimate.getString("geoIdTo")).thenReturn(null);
+        when(highPriorityAsMap.get("partyId")).thenReturn("PARTY1");
+        when(highPriorityAsMap.get("roleTypeId")).thenReturn("CARRIER");
+        when(highPriorityAsMap.get("weightBreakId")).thenReturn(null);
+        when(highPriorityAsMap.get("quantityBreakId")).thenReturn(null);
+        when(highPriorityAsMap.get("priceBreakId")).thenReturn(null);
+        when(highPriorityEstimate.getRelatedOne("WeightQuantityBreak", true)).thenReturn(null);
+        when(highPriorityEstimate.getRelatedOne("QuantityQuantityBreak", true)).thenReturn(null);
+        when(highPriorityEstimate.getRelatedOne("PriceQuantityBreak", true)).thenReturn(null);
+        when(highPriorityAsMap.get("orderFlatPrice")).thenReturn(BigDecimal.ZERO);
+        when(highPriorityAsMap.get("orderItemFlatPrice")).thenReturn(BigDecimal.ZERO);
+        when(highPriorityAsMap.get("orderPricePercent")).thenReturn(BigDecimal.ZERO);
+        when(highPriorityAsMap.get("weightUnitPrice")).thenReturn(BigDecimal.ZERO);
+        when(highPriorityAsMap.get("quantityUnitPrice")).thenReturn(BigDecimal.ZERO);
+        when(highPriorityAsMap.get("priceUnitPrice")).thenReturn(BigDecimal.ZERO);
+        when(highPriorityAsMap.get("featurePercent")).thenReturn(BigDecimal.ZERO);
+        when(highPriorityAsMap.get("featurePrice")).thenReturn(new BigDecimal("2"));
+        when(highPriorityEstimate.getString("productFeatureGroupId")).thenReturn("FEATGRP1");
+        when(highPriorityEstimate.getBigDecimal("oversizeUnit")).thenReturn(new BigDecimal("10"));
+        when(highPriorityEstimate.getBigDecimal("oversizePrice")).thenReturn(new BigDecimal("3"));
+        when(highPriorityAsMap.get("shippingPricePercent")).thenReturn(BigDecimal.ZERO);
+
+        GenericValue featureGroupAppl = mock(GenericValue.class);
+        when(delegator.findList(eq("ProductFeatureGroupAppl"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(featureGroupAppl));
+        when(delegator.findList(eq("ShipmentCostEstimate"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(lowPriorityEstimate, highPriorityEstimate));
+        DispatchContext dctx = mockDispatchContext(delegator);
+
+        Map<String, Object> itemInfo = new HashMap<>();
+        itemInfo.put("size", new BigDecimal("15"));
+        itemInfo.put("quantity", BigDecimal.ONE);
+        itemInfo.put("featureSet", java.util.Set.of("FEAT1"));
+
+        Map<String, Object> context = new HashMap<>();
+        context.put("locale", Locale.US);
+        context.put("productStoreId", "STORE1");
+        context.put("carrierRoleTypeId", "CARRIER");
+        context.put("carrierPartyId", "PARTY1");
+        context.put("shipmentMethodTypeId", "STANDARD");
+        context.put("initialEstimateAmt", BigDecimal.ZERO);
+        context.put("shippableTotal", BigDecimal.TEN);
+        context.put("shippableQuantity", BigDecimal.ONE);
+        context.put("shippableWeight", BigDecimal.ONE);
+        context.put("shippableItemInfo", List.of(itemInfo));
+
+        Map<String, Object> result = ShipmentServices.calcShipmentCostEstimate(dctx, context);
+
+        assertTrue(ServiceUtil.isSuccess(result));
+        BigDecimal shippingEstimateAmount = (BigDecimal) result.get("shippingEstimateAmount");
+        // feature surcharge (featurePrice * quantity = 2) + size surcharge (oversizePrice = 3) = 5
+        assertEquals(0, new BigDecimal("5").compareTo(shippingEstimateAmount));
+    }
+
+    @Test
     void calcShipmentCostEstimateExcludesEstimateWhenAddressRequiredButMissing() throws Exception {
         Delegator delegator = mockDelegator();
         GenericValue estimate = mock(GenericValue.class);
@@ -830,6 +906,56 @@ class ShipmentServicesTest {
         Map<String, Object> result = ShipmentServices.updateShipmentsFromStaging(dctx, context);
 
         assertTrue(ServiceUtil.isSuccess(result));
+    }
+
+    @Test
+    void updateShipmentsFromStagingUpdatesShipmentAndClearsStagingForPackage() throws Exception {
+        Delegator delegator = mockDelegator();
+        GenericValue pkgInfo = mock(GenericValue.class);
+        when(pkgInfo.getString("shipmentPackageSeqId")).thenReturn("00001");
+        when(pkgInfo.getString("shipmentId")).thenReturn("SHIP1");
+        when(pkgInfo.getString("voidIndicator")).thenReturn("N");
+
+        EntityListIterator iterator = mock(EntityListIterator.class);
+        when(iterator.next()).thenReturn(pkgInfo, (GenericValue) null);
+        when(delegator.find(eq("OdbcPackageIn"), nullable(EntityCondition.class), any(), any(), any(), any(EntityFindOptions.class)))
+                .thenReturn(iterator);
+
+        GenericValue shipmentPackage = mock(GenericValue.class);
+        when(delegator.findList(eq("ShipmentPackage"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(shipmentPackage));
+
+        GenericValue rtSeg = mock(GenericValue.class);
+        when(delegator.findList(eq("ShipmentRouteSegment"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(rtSeg));
+
+        GenericValue pkgRtSeg = mock(GenericValue.class);
+        when(delegator.findList(eq("ShipmentPackageRouteSeg"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(pkgRtSeg));
+
+        LocalDispatcher dispatcher = mock(LocalDispatcher.class);
+        when(dispatcher.runSync(eq("updateShipment"), any())).thenReturn(ServiceUtil.returnSuccess());
+        when(dispatcher.runSync(eq("clearShipmentStaging"), any())).thenReturn(ServiceUtil.returnSuccess());
+
+        DispatchContext dctx = mock(DispatchContext.class);
+        when(dctx.getDelegator()).thenReturn(delegator);
+        when(dctx.getDispatcher()).thenReturn(dispatcher);
+        Map<String, Object> context = new HashMap<>();
+        context.put("userLogin", mock(GenericValue.class));
+        context.put("locale", Locale.US);
+
+        // GenericPK#getPrimaryKey() (invoked by a Map-based EntityQuery.where()) resolves its
+        // delegator through DelegatorFactory's static registry, not through the instance passed
+        // to EntityQuery.use() -- stub that registry lookup so the resolved GenericPK stays usable.
+        try (MockedStatic<DelegatorFactory> delegatorFactory = Mockito.mockStatic(DelegatorFactory.class)) {
+            delegatorFactory.when(() -> DelegatorFactory.getDelegator(anyString())).thenReturn(delegator);
+
+            Map<String, Object> result = ShipmentServices.updateShipmentsFromStaging(dctx, context);
+
+            assertTrue(ServiceUtil.isSuccess(result));
+            verify(dispatcher, times(1)).runSync(eq("updateShipment"), any());
+            verify(dispatcher, times(1)).runSync(eq("clearShipmentStaging"), any());
+        }
     }
 
     @Test
@@ -876,5 +1002,143 @@ class ShipmentServicesTest {
         Map<String, Object> result = ShipmentServices.updateShipmentsFromStaging(dctx, context);
 
         assertTrue(ServiceUtil.isError(result));
+    }
+
+    @Test
+    void sendShipmentCompleteNotificationReturnsFailureWhenEmailSettingMissing() throws Exception {
+        Delegator delegator = mockDelegator();
+        GenericValue shipment = mock(GenericValue.class);
+        when(shipment.getString("primaryOrderId")).thenReturn("ORDER1");
+        GenericValue orderHeader = mock(GenericValue.class);
+        when(orderHeader.get("productStoreId")).thenReturn("STORE1");
+        when(delegator.findList(eq("Shipment"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(shipment));
+        when(delegator.findList(eq("OrderHeader"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(orderHeader));
+        when(delegator.findList(eq("ProductStoreEmailSetting"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of());
+
+        LocalDispatcher dispatcher = mock(LocalDispatcher.class);
+        DispatchContext dctx = mockDispatchContext(delegator);
+        when(dctx.getDispatcher()).thenReturn(dispatcher);
+        Map<String, Object> context = new HashMap<>();
+        context.put("shipmentId", "SHIP1");
+        context.put("userLogin", mock(GenericValue.class));
+        context.put("locale", Locale.US);
+
+        Map<String, Object> result = ShipmentServices.sendShipmentCompleteNotification(dctx, context);
+
+        assertTrue(ServiceUtil.isFailure(result));
+    }
+
+    @Test
+    void sendShipmentCompleteNotificationReturnsErrorWhenNoEmailFound() throws Exception {
+        Delegator delegator = mockDelegator();
+        GenericValue shipment = mock(GenericValue.class);
+        when(shipment.getString("primaryOrderId")).thenReturn("ORDER1");
+        when(shipment.getString("partyIdTo")).thenReturn("PARTY1");
+        GenericValue orderHeader = mock(GenericValue.class);
+        when(orderHeader.get("productStoreId")).thenReturn("STORE1");
+        GenericValue productStoreEmail = mock(GenericValue.class);
+        when(delegator.findList(eq("Shipment"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(shipment));
+        when(delegator.findList(eq("OrderHeader"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(orderHeader));
+        when(delegator.findList(eq("ProductStoreEmailSetting"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(productStoreEmail));
+
+        LocalDispatcher dispatcher = mock(LocalDispatcher.class);
+        DispatchContext dctx = mockDispatchContext(delegator);
+        when(dctx.getDispatcher()).thenReturn(dispatcher);
+        Map<String, Object> context = new HashMap<>();
+        context.put("shipmentId", "SHIP1");
+        context.put("userLogin", mock(GenericValue.class));
+        context.put("locale", Locale.US);
+
+        try (MockedStatic<PartyWorker> partyWorker = Mockito.mockStatic(PartyWorker.class)) {
+            partyWorker.when(() -> PartyWorker.findPartyLatestContactMech("PARTY1", "EMAIL_ADDRESS", delegator)).thenReturn(null);
+
+            Map<String, Object> result = ShipmentServices.sendShipmentCompleteNotification(dctx, context);
+
+            assertTrue(ServiceUtil.isError(result));
+        }
+    }
+
+    @Test
+    void sendShipmentCompleteNotificationSendsMailWhenEmailFound() throws Exception {
+        Delegator delegator = mockDelegator();
+        GenericValue shipment = mock(GenericValue.class);
+        when(shipment.getString("primaryOrderId")).thenReturn("ORDER1");
+        when(shipment.getString("partyIdTo")).thenReturn("PARTY1");
+        GenericValue orderHeader = mock(GenericValue.class);
+        when(orderHeader.get("productStoreId")).thenReturn("STORE1");
+        GenericValue productStoreEmail = mock(GenericValue.class);
+        when(productStoreEmail.getString("bodyScreenLocation")).thenReturn("component://product/template/email/ShipmentCompleteEmail.ftl");
+        when(delegator.findList(eq("Shipment"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(shipment));
+        when(delegator.findList(eq("OrderHeader"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(orderHeader));
+        when(delegator.findList(eq("ProductStoreEmailSetting"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(productStoreEmail));
+
+        GenericValue email = mock(GenericValue.class);
+        when(email.getString("infoString")).thenReturn("buyer@example.com");
+
+        LocalDispatcher dispatcher = mock(LocalDispatcher.class);
+        when(dispatcher.runSync(eq("sendMailFromScreen"), any())).thenReturn(ServiceUtil.returnSuccess());
+        DispatchContext dctx = mockDispatchContext(delegator);
+        when(dctx.getDispatcher()).thenReturn(dispatcher);
+        Map<String, Object> context = new HashMap<>();
+        context.put("shipmentId", "SHIP1");
+        context.put("userLogin", mock(GenericValue.class));
+        context.put("locale", Locale.US);
+
+        try (MockedStatic<PartyWorker> partyWorker = Mockito.mockStatic(PartyWorker.class)) {
+            partyWorker.when(() -> PartyWorker.findPartyLatestContactMech("PARTY1", "EMAIL_ADDRESS", delegator)).thenReturn(email);
+            partyWorker.when(() -> PartyWorker.findPartyLastLocale("PARTY1", delegator)).thenReturn(Locale.US);
+
+            Map<String, Object> result = ShipmentServices.sendShipmentCompleteNotification(dctx, context);
+
+            assertTrue(ServiceUtil.isSuccess(result));
+            verify(dispatcher, times(1)).runSync(eq("sendMailFromScreen"), any());
+        }
+    }
+
+    @Test
+    void sendShipmentCompleteNotificationReturnsErrorWhenSendMailFails() throws Exception {
+        Delegator delegator = mockDelegator();
+        GenericValue shipment = mock(GenericValue.class);
+        when(shipment.getString("primaryOrderId")).thenReturn("ORDER1");
+        when(shipment.getString("partyIdTo")).thenReturn("PARTY1");
+        GenericValue orderHeader = mock(GenericValue.class);
+        when(orderHeader.get("productStoreId")).thenReturn("STORE1");
+        GenericValue productStoreEmail = mock(GenericValue.class);
+        when(delegator.findList(eq("Shipment"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(shipment));
+        when(delegator.findList(eq("OrderHeader"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(orderHeader));
+        when(delegator.findList(eq("ProductStoreEmailSetting"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(productStoreEmail));
+
+        GenericValue email = mock(GenericValue.class);
+        when(email.getString("infoString")).thenReturn("buyer@example.com");
+
+        LocalDispatcher dispatcher = mock(LocalDispatcher.class);
+        when(dispatcher.runSync(eq("sendMailFromScreen"), any())).thenThrow(new GenericServiceException("boom"));
+        DispatchContext dctx = mockDispatchContext(delegator);
+        when(dctx.getDispatcher()).thenReturn(dispatcher);
+        Map<String, Object> context = new HashMap<>();
+        context.put("shipmentId", "SHIP1");
+        context.put("userLogin", mock(GenericValue.class));
+        context.put("locale", Locale.US);
+
+        try (MockedStatic<PartyWorker> partyWorker = Mockito.mockStatic(PartyWorker.class)) {
+            partyWorker.when(() -> PartyWorker.findPartyLatestContactMech("PARTY1", "EMAIL_ADDRESS", delegator)).thenReturn(email);
+            partyWorker.when(() -> PartyWorker.findPartyLastLocale("PARTY1", delegator)).thenReturn(null);
+
+            Map<String, Object> result = ShipmentServices.sendShipmentCompleteNotification(dctx, context);
+
+            assertTrue(ServiceUtil.isError(result));
+        }
     }
 }
