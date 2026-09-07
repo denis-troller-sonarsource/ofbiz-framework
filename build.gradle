@@ -30,6 +30,7 @@ plugins {
     id 'eclipse'
     id 'checkstyle'
     id 'codenarc'
+    id 'jacoco'
     id 'maven-publish'
     id "org.asciidoctor.jvm.convert" version "4.0.5" // For now we can not update above. See "production-ready version" warning in https://plugins.gradle.org/plugin/org.asciidoctor.jvm
     id "org.asciidoctor.jvm.pdf" version "4.0.5"     // For now we can not update above. See "production-ready version" warning in https://plugins.gradle.org/plugin/org.asciidoctor.jvm
@@ -46,6 +47,7 @@ sonar {
   properties {
     property "sonar.projectKey", "denis-troller-sonarsource_ofbiz-framework"
     property "sonar.organization", "denis-troller-sonar"
+    property "sonar.coverage.jacoco.xmlReportPaths", "${buildDir}/reports/jacoco/test/jacocoTestReport.xml"
   }
 }
 
@@ -428,7 +430,15 @@ test {
     testLogging {
         events "passed", "skipped", "failed"
     }
-    finalizedBy(reskinGradleTestReport)
+    finalizedBy(reskinGradleTestReport, jacocoTestReport)
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = false
+    }
 }
 
 // The archiveUnitTestReport provider is looked up and configured here, outside the test task's
