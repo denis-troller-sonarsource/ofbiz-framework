@@ -112,7 +112,8 @@ class ShipmentEventsTest {
         when(dispatcher.runSync(anyString(), any())).thenReturn(successResult);
 
         HttpSession session = mock(HttpSession.class);
-        when(session.getAttribute("userLogin")).thenReturn(mock(GenericValue.class));
+        GenericValue userLogin = mock(GenericValue.class);
+        when(session.getAttribute("userLogin")).thenReturn(userLogin);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getAttribute("dispatcher")).thenReturn(dispatcher);
@@ -133,7 +134,8 @@ class ShipmentEventsTest {
         when(dispatcher.runSync(anyString(), any())).thenReturn(errorResult);
 
         HttpSession session = mock(HttpSession.class);
-        when(session.getAttribute("userLogin")).thenReturn(mock(GenericValue.class));
+        GenericValue userLogin = mock(GenericValue.class);
+        when(session.getAttribute("userLogin")).thenReturn(userLogin);
 
         HttpServletRequest request = mock(HttpServletRequest.class);
         when(request.getAttribute("dispatcher")).thenReturn(dispatcher);
