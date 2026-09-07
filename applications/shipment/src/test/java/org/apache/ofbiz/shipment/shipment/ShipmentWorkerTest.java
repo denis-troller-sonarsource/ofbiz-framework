@@ -39,6 +39,8 @@ import org.apache.ofbiz.entity.GenericValue;
 import org.apache.ofbiz.entity.util.EntityFindOptions;
 import org.apache.ofbiz.service.DispatchContext;
 import org.apache.ofbiz.service.LocalDispatcher;
+import org.apache.ofbiz.service.ModelService;
+import org.apache.ofbiz.service.ServiceUtil;
 import org.junit.jupiter.api.Test;
 
 class ShipmentWorkerTest {
@@ -167,5 +169,46 @@ class ShipmentWorkerTest {
         BigDecimal weight = ShipmentWorker.calcPackageWeight(dctx, packageMap, List.of(itemInfo), BigDecimal.ONE);
 
         assertEquals(new BigDecimal("9"), weight);
+    }
+
+    @Test
+    void calcPackageWeightConvertsNonPoundUnitsBeforeSumming() throws Exception {
+        LocalDispatcher dispatcher = mock(LocalDispatcher.class);
+        Map<String, Object> conversionResult = new HashMap<>();
+        conversionResult.put(ModelService.RESPONSE_MESSAGE, ModelService.RESPOND_SUCCESS);
+        conversionResult.put("convertedValue", new BigDecimal("8.8"));
+        when(dispatcher.runSync(eq("convertUom"), any(Map.class))).thenReturn(conversionResult);
+        DispatchContext dctx = mockDispatchContext(dispatcher);
+
+        Map<String, Object> itemInfo = new HashMap<>();
+        itemInfo.put("productId", "PROD1");
+        itemInfo.put("productWeight", new BigDecimal("4"));
+        itemInfo.put("weightUomId", "WT_kg");
+
+        Map<String, BigDecimal> packageMap = new HashMap<>();
+        packageMap.put("PROD1", BigDecimal.ONE);
+
+        BigDecimal weight = ShipmentWorker.calcPackageWeight(dctx, packageMap, List.of(itemInfo), BigDecimal.ZERO);
+
+        assertEquals(new BigDecimal("8.8"), weight);
+    }
+
+    @Test
+    void calcPackageWeightReturnsAccumulatedWeightWhenConversionServiceErrors() throws Exception {
+        LocalDispatcher dispatcher = mock(LocalDispatcher.class);
+        when(dispatcher.runSync(eq("convertUom"), any(Map.class))).thenReturn(ServiceUtil.returnError("boom"));
+        DispatchContext dctx = mockDispatchContext(dispatcher);
+
+        Map<String, Object> itemInfo = new HashMap<>();
+        itemInfo.put("productId", "PROD1");
+        itemInfo.put("productWeight", new BigDecimal("4"));
+        itemInfo.put("weightUomId", "WT_kg");
+
+        Map<String, BigDecimal> packageMap = new HashMap<>();
+        packageMap.put("PROD1", BigDecimal.ONE);
+
+        BigDecimal weight = ShipmentWorker.calcPackageWeight(dctx, packageMap, List.of(itemInfo), BigDecimal.ZERO);
+
+        assertEquals(BigDecimal.ZERO, weight);
     }
 }

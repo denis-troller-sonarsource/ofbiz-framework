@@ -114,6 +114,28 @@ class ShipmentEventsTest {
     }
 
     @Test
+    void viewShipmentPackageRouteSegLabelImageFallsBackToPngWhenGifStreamingFails() throws Exception {
+        GenericValue shipmentPackageRouteSeg = mock(GenericValue.class);
+        when(shipmentPackageRouteSeg.getBytes("labelImage")).thenReturn(new byte[] {1, 2, 3});
+
+        Delegator delegator = mockDelegator();
+        when(delegator.findList(anyString(), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(shipmentPackageRouteSeg));
+
+        HttpServletRequest request = mockRequest(delegator);
+        when(request.getParameter("shipmentId")).thenReturn("SHIP1");
+        when(request.getParameter("shipmentRouteSegmentId")).thenReturn("1");
+        when(request.getParameter("shipmentPackageSeqId")).thenReturn("00001");
+        HttpServletResponse response = mock(HttpServletResponse.class);
+        ServletOutputStream outputStream = mock(ServletOutputStream.class);
+        when(response.getOutputStream()).thenThrow(new java.io.IOException("gif failed")).thenReturn(outputStream);
+
+        String result = ShipmentEvents.viewShipmentPackageRouteSegLabelImage(request, response);
+
+        assertEquals("success", result);
+    }
+
+    @Test
     void checkForceShipmentReceivedSkipsUpdateWhenNotForced() {
         HttpSession session = mock(HttpSession.class);
 
