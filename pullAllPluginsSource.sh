@@ -27,10 +27,19 @@ if [ -d "plugins" ]
         rm -rf plugins
 fi
 
+PLUGINS_REPO="https://github.com/apache/ofbiz-plugins.git"
+
 # Get the branch used in framework
 branch=$(git branch --show-current)
 
-git clone --depth 1 --single-branch --branch $branch https://github.com/apache/ofbiz-plugins.git plugins
+# Fall back to trunk when the current branch has no counterpart in ofbiz-plugins
+# (e.g. a feature branch created only in this repository).
+if ! git ls-remote --exit-code --heads "$PLUGINS_REPO" "$branch" > /dev/null 2>&1
+    then
+        branch=trunk
+fi
+
+git clone --depth 1 --single-branch --branch $branch "$PLUGINS_REPO" plugins
 
 # remove .git, in this case it's useless information
  if [ -d "plugins" ]

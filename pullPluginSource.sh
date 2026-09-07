@@ -27,13 +27,22 @@ if [ -d "plugins" ]
         fi
 fi
 
+PLUGINS_REPO="https://github.com/apache/ofbiz-plugins.git"
+
 # Get the branch used in framework
 branch=$(git branch --show-current)
+
+# Fall back to trunk when the current branch has no counterpart in ofbiz-plugins
+# (e.g. a feature branch created only in this repository).
+if ! git ls-remote --exit-code --heads "$PLUGINS_REPO" "$branch" > /dev/null 2>&1
+    then
+        branch=trunk
+fi
 
 # Clone and set if new else simply add
 if [ ! -d "plugins/.git" ]
     then
-        git clone --depth 1 --sparse --single-branch --branch $branch https://github.com/apache/ofbiz-plugins.git plugins
+        git clone --depth 1 --sparse --single-branch --branch $branch "$PLUGINS_REPO" plugins
         cd plugins
         git sparse-checkout set "$1"
 else
