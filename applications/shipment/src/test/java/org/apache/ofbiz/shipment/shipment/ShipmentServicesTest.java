@@ -605,6 +605,78 @@ class ShipmentServicesTest {
     }
 
     @Test
+    void getShipmentPackageValueFromOrdersProratesAndConvertsPackageContentValue() throws Exception {
+        Delegator delegator = mockDelegator();
+        when(delegator.findList(eq("Shipment"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(mock(GenericValue.class)));
+        when(delegator.findList(eq("ShipmentPackage"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(mock(GenericValue.class)));
+
+        GenericValue packageContent = mock(GenericValue.class);
+        when(packageContent.getString("orderId")).thenReturn("ORDER1");
+        when(packageContent.getString("orderItemSeqId")).thenReturn("00001");
+        when(packageContent.getBigDecimal("issuedQuantity")).thenReturn(new BigDecimal("2"));
+        GenericValue orderHeader = mock(GenericValue.class);
+        when(orderHeader.getString("currencyUom")).thenReturn("EUR");
+        when(packageContent.getRelatedOne("OrderHeader", false)).thenReturn(orderHeader);
+        when(delegator.findList(eq("PackedQtyVsOrderItemQuantity"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(packageContent));
+
+        Map<String, Object> invoiceResult = ServiceUtil.returnSuccess();
+        invoiceResult.put("invoicedAmount", new BigDecimal("100"));
+        invoiceResult.put("invoicedQuantity", new BigDecimal("4"));
+        Map<String, Object> convertResult = ServiceUtil.returnSuccess();
+        convertResult.put("convertedValue", new BigDecimal("55"));
+
+        LocalDispatcher dispatcher = mock(LocalDispatcher.class);
+        when(dispatcher.runSync(eq("getOrderItemInvoicedAmountAndQuantity"), any())).thenReturn(invoiceResult);
+        when(dispatcher.runSync(eq("convertUom"), any())).thenReturn(convertResult);
+        DispatchContext dctx = mock(DispatchContext.class);
+        when(dctx.getDelegator()).thenReturn(delegator);
+        when(dctx.getDispatcher()).thenReturn(dispatcher);
+        Map<String, Object> context = new HashMap<>();
+        context.put("shipmentId", "SHIP1");
+        context.put("shipmentPackageSeqId", "00001");
+        context.put("currencyUomId", "USD");
+        context.put("userLogin", mock(GenericValue.class));
+        context.put("locale", Locale.US);
+
+        Map<String, Object> result = ShipmentServices.getShipmentPackageValueFromOrders(dctx, context);
+
+        assertTrue(ServiceUtil.isSuccess(result));
+        assertEquals(0, new BigDecimal("55.00").compareTo((BigDecimal) result.get("packageValue")));
+    }
+
+    @Test
+    void getShipmentPackageValueFromOrdersReturnsErrorWhenInvoiceLookupFails() throws Exception {
+        Delegator delegator = mockDelegator();
+        when(delegator.findList(eq("Shipment"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(mock(GenericValue.class)));
+        when(delegator.findList(eq("ShipmentPackage"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(mock(GenericValue.class)));
+
+        GenericValue packageContent = mock(GenericValue.class);
+        when(delegator.findList(eq("PackedQtyVsOrderItemQuantity"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(packageContent));
+
+        LocalDispatcher dispatcher = mock(LocalDispatcher.class);
+        when(dispatcher.runSync(eq("getOrderItemInvoicedAmountAndQuantity"), any())).thenReturn(ServiceUtil.returnError("boom"));
+        DispatchContext dctx = mock(DispatchContext.class);
+        when(dctx.getDelegator()).thenReturn(delegator);
+        when(dctx.getDispatcher()).thenReturn(dispatcher);
+        Map<String, Object> context = new HashMap<>();
+        context.put("shipmentId", "SHIP1");
+        context.put("shipmentPackageSeqId", "00001");
+        context.put("currencyUomId", "USD");
+        context.put("userLogin", mock(GenericValue.class));
+        context.put("locale", Locale.US);
+
+        Map<String, Object> result = ShipmentServices.getShipmentPackageValueFromOrders(dctx, context);
+
+        assertTrue(ServiceUtil.isError(result));
+    }
+
+    @Test
     void getShipmentPackageValueFromOrdersReturnsErrorOnEntityException() throws Exception {
         Delegator delegator = mockDelegator();
         when(delegator.findList(anyString(), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
@@ -704,6 +776,37 @@ class ShipmentServicesTest {
         Map<String, Object> result = ShipmentServices.createShipmentEstimate(dctx, context);
 
         assertTrue(ServiceUtil.isError(result));
+    }
+
+    @Test
+    void createShipmentEstimateAppliesValidWeightBreakWithUom() throws Exception {
+        Delegator delegator = mockDelegator();
+        GenericValue productStoreShipMeth = mock(GenericValue.class);
+        when(delegator.findList(eq("ProductStoreShipmentMeth"), any(), any(), any(), any(), any(EntityFindOptions.class), anyBoolean()))
+                .thenReturn(List.of(productStoreShipMeth));
+        GenericValue estimate = mock(GenericValue.class);
+        when(delegator.makeValue("ShipmentCostEstimate")).thenReturn(estimate);
+        when(delegator.getNextSeqId("ShipmentCostEstimate")).thenReturn("EST1");
+        when(delegator.getNextSeqId("QuantityBreak")).thenReturn("QB1");
+        GenericValue quantityBreak = mock(GenericValue.class);
+        when(delegator.makeValue(eq("QuantityBreak"), any(Object[].class))).thenReturn(quantityBreak);
+        when(estimate.get("shipmentCostEstimateId")).thenReturn("EST1");
+        DispatchContext dctx = mockDispatchContext(delegator);
+        Map<String, Object> context = new HashMap<>();
+        context.put("productStoreShipMethId", "METH1");
+        context.put("locale", Locale.US);
+        context.put("wmin", new BigDecimal("1"));
+        context.put("wmax", new BigDecimal("10"));
+        context.put("wprice", new BigDecimal("2"));
+        context.put("wuom", "WT_lb");
+
+        Map<String, Object> result = ShipmentServices.createShipmentEstimate(dctx, context);
+
+        assertTrue(ServiceUtil.isSuccess(result));
+        verify(estimate, times(1)).set("weightBreakId", "QB1");
+        // createShipmentEstimate itself also sets weightUomId directly from the "wuom" context
+        // field, in addition to applyQuantityBreak's own set() for the same key.
+        verify(estimate, times(2)).set("weightUomId", "WT_lb");
     }
 
     @Test
