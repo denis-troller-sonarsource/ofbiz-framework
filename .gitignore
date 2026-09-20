@@ -30,6 +30,7 @@ changelog
 .DS_Store
 desktop.ini
 .idea
+.claude/settings.local.json
 *.iml
 *.ipr
 *.iws
