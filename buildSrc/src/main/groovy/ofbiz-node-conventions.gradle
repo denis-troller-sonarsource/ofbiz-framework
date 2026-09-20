@@ -54,6 +54,12 @@ node {
 // is being built (distTar, distZip, etc.).
 if (!project.rootProject.hasProperty('skipNpmInstall')) {
     project.rootProject.tasks.getByName('classes').dependsOn npmInstall
+} else {
+    // Container builds inject node_modules from a credential-safe BuildKit asset stage.
+    // Disable setup/install tasks so Gradle cannot reach public Node or npm registries.
+    tasks.matching { it.name in ['nodeSetup', 'npmSetup', 'npmInstall'] }.configureEach {
+        enabled = false
+    }
 }
 
 // Task to clean up the output from npmInstall.

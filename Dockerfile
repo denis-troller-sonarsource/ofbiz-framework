@@ -18,6 +18,20 @@
 # under the License.
 #####################################################################
 
+FROM node:22-alpine AS npm-assets
+WORKDIR /assets/theme
+COPY themes/common-theme/webapp/common-theme/js/package.json ./
+COPY themes/common-theme/webapp/common-theme/js/package-lock.json ./
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=true \
+    --mount=type=secret,id=corporate_ca,target=/run/secrets/corporate-ca.pem,required=true \
+    NODE_EXTRA_CA_CERTS=/run/secrets/corporate-ca.pem npm ci --ignore-scripts --legacy-peer-deps
+WORKDIR /assets/rest-api
+COPY framework/rest-api/package.json ./
+COPY framework/rest-api/package-lock.json ./
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=true \
+    --mount=type=secret,id=corporate_ca,target=/run/secrets/corporate-ca.pem,required=true \
+    NODE_EXTRA_CA_CERTS=/run/secrets/corporate-ca.pem npm ci --ignore-scripts
+
 FROM eclipse-temurin:17@sha256:e8d451f3b5aa6422c2b00bb913cb8d37a55a61934259109d945605c5651de9a6 AS builder
 
 # Git is used for various OFBiz build tasks.
@@ -47,12 +61,14 @@ COPY lib/ lib/
 # We use a regex to match the plugins directory to avoid a build error when the directory doesn't exist.
 COPY plugin[s]/ plugins/
 COPY themes/ themes/
+COPY --from=npm-assets /assets/theme/node_modules themes/common-theme/webapp/common-theme/js/node_modules
+COPY --from=npm-assets /assets/rest-api/node_modules framework/rest-api/node_modules
 COPY APACHE2_HEADER build.gradle common.gradle gradle.properties NOTICE settings.gradle dependencies.gradle test-reports.gradle .
 
 # Build OFBiz while mounting a gradle cache
 RUN --mount=type=cache,id=gradle-cache,sharing=locked,target=/root/.gradle \
     --mount=type=tmpfs,target=runtime/tmp \
-    ["./gradlew", "--console", "plain", "generateSecretKeys", "distTar"]
+    ["./gradlew", "--console", "plain", "-PskipNpmInstall", "generateSecretKeys", "distTar"]
 
 ###################################################################################
 

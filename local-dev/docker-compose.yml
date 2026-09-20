@@ -1,0 +1,77 @@
+name: erp-local
+services:
+  legacy-ofbiz-db:
+    image: postgres:13
+    restart: unless-stopped
+    env_file:
+      - ../docker/examples/postgres-demo/postgres.env
+      - ../docker/examples/postgres-demo/ofbiz-postgres.env
+    volumes:
+      - legacy-db:/var/lib/postgresql/data
+      - ../docker/examples/postgres-demo/postgres-initdb.d:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ofbiz -d ofbizmaindb"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  legacy-ofbiz-app:
+    build:
+      context: ..
+      secrets:
+        - npmrc
+        - corporate_ca
+    restart: unless-stopped
+    ports:
+      - "18443:8443"
+    entrypoint:
+      - /bin/sh
+      - -c
+      - rm -f /ofbiz/runtime/container_state/config_applied && exec /ofbiz/docker-entrypoint.sh bin/ofbiz
+    volumes:
+      - legacy-runtime:/ofbiz/runtime
+    env_file:
+      - ../docker/examples/postgres-demo/ofbiz-postgres.env
+    environment:
+      OFBIZ_POSTGRES_HOST: legacy-ofbiz-db
+      OFBIZ_DATA_LOAD: demo
+      OFBIZ_HOST: localhost
+      OFBIZ_CONTENT_URL_PREFIX: https://localhost:18443
+    depends_on:
+      legacy-ofbiz-db:
+        condition: service_healthy
+
+  modern-accounting-invoice-service:
+    build: ../services/accounting-invoice-service
+    restart: unless-stopped
+    environment:
+      OFBIZ_JDBC_URL: jdbc:postgresql://legacy-ofbiz-db:5432/ofbizmaindb
+      OFBIZ_DB_USER: ofbiz
+      OFBIZ_DB_PASSWORD: Ab6SqDD2YM2lmEsvao-
+    depends_on:
+      legacy-ofbiz-db:
+        condition: service_healthy
+
+  modern-notification-service:
+    build: ../services/notification-service
+    restart: unless-stopped
+
+  modern-gateway:
+    build: gateway
+    restart: unless-stopped
+    ports:
+      - "18080:443"
+    depends_on:
+      - legacy-ofbiz-app
+      - modern-accounting-invoice-service
+      - modern-notification-service
+
+volumes:
+  legacy-db:
+  legacy-runtime:
+
+secrets:
+  npmrc:
+    file: ${NPM_CONFIG_USERCONFIG:-${HOME}/.npmrc}
+  corporate_ca:
+    file: ${CORPORATE_CA_FILE:-${HOME}/.certs/Sonar-CloudFlare-Inspection-Cert.pem}
